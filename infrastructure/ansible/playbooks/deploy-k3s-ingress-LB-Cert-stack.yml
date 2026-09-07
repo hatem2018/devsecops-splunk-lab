@@ -1,0 +1,236 @@
+---
+- name: Deploy K3s platform stack (MetalLB, cert-manager, Kong)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    kubeconfig_path: "/home/devops/.kube/config"
+
+    metallb_namespace: "metallb-system"
+    metallb_version: "0.13.12"
+    metallb_address_pool_name: "default-addresspool"
+    metallb_ip_range: "10.0.0.60-10.0.0.90"
+
+    cert_manager_namespace: "cert-manager"
+    cert_manager_email: "admin@example.com"
+    cert_manager_cluster_issuer_name: "letsencrypt-staging"
+
+    kong_namespace: "kong"
+
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+
+  tasks:
+    ###########################################################################
+    # 1) METALLB (FIXED, STABLE, WAIT FOR WEBHOOK)
+    ###########################################################################
+    - name: "MetalLB | Create namespace"
+      shell: |
+        kubectl get ns {{ metallb_namespace }} >/dev/null 2>&1 || \
+        kubectl create ns {{ metallb_namespace }}
+      changed_when: false
+
+    - name: "MetalLB | Add Helm repo"
+      shell: |
+        helm repo add metallb https://metallb.github.io/metallb >/dev/null 2>&1 || true
+        helm repo update metallb
+      changed_when: false
+
+    - name: "MetalLB | Create Helm values file"
+      copy:
+        dest: /tmp/metallb-values.yaml
+        content: |
+          controller:
+            image:
+              repository: quay.io/metallb/controller
+              tag: v{{ metallb_version }}
+
+          speaker:
+            image:
+              repository: quay.io/metallb/speaker
+              tag: v{{ metallb_version }}
+      changed_when: false
+
+    - name: "MetalLB | Install / upgrade pinned stable version"
+      shell: |
+        helm upgrade --install metallb metallb/metallb \
+          --namespace {{ metallb_namespace }} \
+          --create-namespace \
+          --version {{ metallb_version }} \
+          -f /tmp/metallb-values.yaml
+      register: metallb_helm
+      changed_when: "'Release \"metallb\" has been upgraded' in metallb_helm.stdout or 'installed' in metallb_helm.stdout"
+
+    - name: "MetalLB | Wait for all MetalLB pods to be Ready"
+      shell: |
+        kubectl wait --namespace {{ metallb_namespace }} \
+          --for=condition=ready pod \
+          -l app.kubernetes.io/instance=metallb \
+          --timeout=180s
+      register: metallb_wait
+      retries: 10
+      delay: 5
+      until: metallb_wait.rc == 0
+
+
+    - name: "MetalLB | Configure IPAddressPool + L2Advertisement"
+      shell: |
+        cat << 'EOF' | kubectl apply -f -
+        apiVersion: metallb.io/v1beta1
+        kind: IPAddressPool
+        metadata:
+          name: {{ metallb_address_pool_name }}
+          namespace: {{ metallb_namespace }}
+        spec:
+          addresses:
+            - {{ metallb_ip_range }}
+        ---
+        apiVersion: metallb.io/v1beta1
+        kind: L2Advertisement
+        metadata:
+          name: default-l2adv
+          namespace: {{ metallb_namespace }}
+        spec:
+          ipAddressPools:
+            - {{ metallb_address_pool_name }}
+        EOF
+      register: metallb_pool
+      changed_when: "'created' in metallb_pool.stdout or 'configured' in metallb_pool.stdout"
+
+    ###########################################################################
+    # 2) CERT-MANAGER
+    ###########################################################################
+    - name: "cert-manager | Add Helm repo"
+      shell: |
+        helm repo add jetstack https://charts.jetstack.io >/dev/null 2>&1 || true
+        helm repo update jetstack
+      changed_when: false
+
+    - name: "cert-manager | Install CRDs"
+      shell: |
+        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.crds.yaml
+      register: cert_crds
+      changed_when: "'created' in cert_crds.stdout or 'configured' in cert_crds.stdout"
+
+    - name: "cert-manager | Install / upgrade"
+      shell: |
+        helm upgrade --install cert-manager jetstack/cert-manager \
+          --namespace {{ cert_manager_namespace }} \
+          --create-namespace \
+          --set installCRDs=false
+      register: cert_helm
+      changed_when: "'installed' in cert_helm.stdout or 'upgraded' in cert_helm.stdout"
+
+    - name: "cert-manager | Create ClusterIssuer (Let's Encrypt staging + Kong)"
+      shell: |
+        cat << 'EOF' | kubectl apply -f -
+        apiVersion: cert-manager.io/v1
+        kind: ClusterIssuer
+        metadata:
+          name: {{ cert_manager_cluster_issuer_name }}
+        spec:
+          acme:
+            server: https://acme-staging-v02.api.letsencrypt.org/directory
+            email: {{ cert_manager_email }}
+            privateKeySecretRef:
+              name: {{ cert_manager_cluster_issuer_name }}-key
+            solvers:
+              - http01:
+                  ingress:
+                    class: kong
+        EOF
+      register: issuer_apply
+      changed_when: "'created' in issuer_apply.stdout or 'configured' in issuer_apply.stdout"
+
+    #######################################################################
+    # 3) KONG — CRD FIX (Extract CRDs from chart, install manually)
+    #######################################################################
+
+    - name: Kong | Add Helm repo
+      shell: |
+        helm repo add kong https://charts.konghq.com >/dev/null 2>&1 || true
+        helm repo update
+
+    - name: Kong | Download chart (extract CRDs)
+      shell: |
+        rm -rf /tmp/kong-chart
+        helm pull kong/kong --untar --untardir /tmp/kong-chart
+
+    - name: Kong | Install CRDs manually from chart
+      shell: |
+        if [ -d /tmp/kong-chart/kong/crds ]; then
+          kubectl apply -f /tmp/kong-chart/kong/crds;
+        else
+          echo "Error: Kong CRDs directory not found";
+          exit 1;
+        fi
+
+    - name: Kong | Create values file
+      copy:
+        dest: /tmp/kong-values.yaml
+        content: |-
+          proxy:
+            type: LoadBalancer
+            http:
+              enabled: true
+            tls:
+              enabled: true
+
+            env:
+              KONG_PASSWORD: "{{ vault_kong_admin_password }}"
+              KONG_ADMIN_GUI_AUTH: basic-auth
+              KONG_ADMIN_API_URI: "http://localhost:8001"
+
+          ingressController:
+            enabled: true
+            installCRDs: false
+
+          manager:
+            enabled: true
+            type: ClusterIP
+            http:
+              enabled: true
+            tls:
+              enabled: false
+
+          admin:
+            enabled: true
+            type: ClusterIP
+            http:
+              enabled: true
+            tls:
+              enabled: false
+
+    - name: Kong | Install / upgrade
+      shell: |
+        helm upgrade --install kong kong/kong \
+          --namespace {{ kong_namespace }} \
+          --create-namespace \
+          -f /tmp/kong-values.yaml
+      register: kong_helm
+      changed_when: "'installed' in kong_helm.stdout or 'upgraded' in kong_helm.stdout"
+
+    #######################################################################
+
+
+    ###########################################################################
+    # 4) SUMMARY
+    ###########################################################################
+    - name: "INFO | Kong services"
+      shell: kubectl get svc -n {{ kong_namespace }}
+      register: kong_svcs
+      changed_when: false
+
+    - name: "INFO | MetalLB services"
+      shell: kubectl get svc -n {{ metallb_namespace }}
+      register: metallb_svcs
+      changed_when: false
+
+    - name: "INFO | Summary output"
+      debug:
+        msg:
+          - "Kong Services:"
+          - "{{ kong_svcs.stdout_lines }}"
+          - "MetalLB Services:"
+          - "{{ metallb_svcs.stdout_lines }}"

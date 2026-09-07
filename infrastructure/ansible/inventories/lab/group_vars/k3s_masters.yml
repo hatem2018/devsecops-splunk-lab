@@ -1,0 +1,10 @@
+---
+
+k3s_control_node: true
+k3s_state: installed
+k3s_registration_address: 10.0.0.102
+k3s_server:
+  cluster_init: true
+  write_kubeconfig_mode: "0644"
+  disable:
+    - traefik

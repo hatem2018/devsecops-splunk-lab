@@ -1,0 +1,30 @@
+- name: Deploy SC4S
+  hosts: controller
+  gather_facts: false
+
+  vars:
+    sc4s_release_name: sc4s
+    sc4s_namespace: sc4s
+    sc4s_chart: splunk/splunk-connect-for-syslog
+    kubeconfig_local_path: /home/devops/.kube/config
+
+  tasks:
+    - name: Add Splunk charts repo (idempotent)
+      kubernetes.core.helm_repository:
+        name: splunk
+        repo_url: https://splunk.github.io/splunk-connect-for-syslog
+      failed_when: false
+
+    - name: Update Helm repositories
+      ansible.builtin.command: helm repo update
+      changed_when: false
+
+    - name: Install/upgrade SC4S
+      kubernetes.core.helm:
+        name: "{{ sc4s_release_name }}"
+        chart_ref: "{{ sc4s_chart }}"
+        release_namespace: "{{ sc4s_namespace }}"
+        create_namespace: true
+        kubeconfig: "{{ kubeconfig_local_path }}"
+        wait: true
+        atomic: true

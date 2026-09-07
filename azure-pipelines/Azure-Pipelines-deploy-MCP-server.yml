@@ -1,0 +1,44 @@
+trigger: none
+
+pool:
+  name: LabAgents
+
+variables:
+  - group: LabSecret
+  - name: IMAGE_PUBLIC
+    value: "ginnux/k8s-mcp-server:latest"
+  - name: IMAGE_PRIVATE
+    value: "10.0.0.110:8082/k8s-mcp-server:latest"
+  - name: PLAYBOOK
+    value: "infrastructure/ansible/playbooks/88-deploy-mcp-server.yml"
+
+steps:
+  # ======================================================
+  # 1. Mirror image Docker Hub -> Nexus
+  # ======================================================
+  - script: |
+      echo "=== Pull public image ==="
+      docker pull $(IMAGE_PUBLIC)
+
+      echo "=== Tag for Nexus ==="
+      docker tag $(IMAGE_PUBLIC) $(IMAGE_PRIVATE)
+
+      echo "=== Login Nexus ==="
+      echo "$(nexus_password)" | docker login 10.0.0.110:8082 \
+        -u admin \
+        --password-stdin
+
+      echo "=== Push to Nexus ==="
+      docker push $(IMAGE_PRIVATE)
+    displayName: "Mirror MCP image to Nexus"
+
+  # ======================================================
+  # 2. Deploy via Ansible
+  # ======================================================
+  - script: |
+      echo "=== Running Ansible playbook ==="
+      ansible-playbook $(PLAYBOOK) \
+        -e "kubeconfig_path=/home/devops/.kube/config" \
+        -e "nexus_password=$(nexus_password)" \
+        -i infrastructure/ansible/inventories/hosts.yml
+    displayName: "Deploy MCP Server"

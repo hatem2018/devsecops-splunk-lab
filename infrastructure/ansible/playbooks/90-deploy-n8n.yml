@@ -1,0 +1,78 @@
+---
+- name: Deploy n8n using Helm
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    n8n_namespace: n8n
+    kubeconfig: "/home/devops/.kube/config"
+
+  tasks:
+
+    # ========================================================
+    # Namespace
+    # ========================================================
+
+    - name: Ensure n8n namespace exists
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ n8n_namespace }}"
+        state: present
+        kubeconfig: "{{ kubeconfig }}"
+
+
+    # ========================================================
+    # Deploy / Upgrade Helm release
+    # ========================================================
+
+    - name: Deploy / Upgrade n8n Helm chart
+      kubernetes.core.helm:
+
+        release_name: n8n
+
+        chart_ref: "{{ playbook_dir }}/../../helm/n8n"
+
+        release_namespace: "{{ n8n_namespace }}"
+
+        kubeconfig: "{{ kubeconfig }}"
+
+        values_files:
+          - "{{ playbook_dir }}/../../helm/n8n/values.yaml"
+
+        reset_values: false
+
+        wait: true
+
+        wait_timeout: 300s
+
+        values:
+
+          image:
+            repository: "{{ n8n_image_repository }}"
+            tag: "{{ n8n_image_tag }}"
+            pullPolicy: Always
+
+          env:
+
+            - name: NODE_ENV
+              value: "production"
+
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=768"
+
+            - name: MCP_SERVER_URL
+              value: "http://k8s-mcp-server.mcp.svc.cluster.local:8080"
+
+            - name: N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE
+              value: "true"
+
+
+          envSecrets:
+
+            OPENAI_API_KEY: "{{ lookup('env', 'OPENAI_API_KEY') }}"
+
+            N8N_ENCRYPTION_KEY: "{{ lookup('env', 'N8N_ENCRYPTION_KEY') }}"
+
+            N8N_BASIC_AUTH_PASSWORD: "{{ lookup('env', 'N8N_BASIC_AUTH_PASSWORD') }}"

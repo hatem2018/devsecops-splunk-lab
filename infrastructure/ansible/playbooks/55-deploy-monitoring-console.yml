@@ -1,0 +1,17 @@
+---
+- name: Deploy Splunk Monitoring Console (CRD)
+  hosts: controller
+  gather_facts: false
+
+  vars:
+    _name: "{{ splunk_license_manager_name | default('splunk-license-manager') }}"
+    _ns: "{{ splunk_namespace | default('splunk') }}"
+    k8s_kubeconfig: "/home/devops/.kube/config"
+
+  tasks:
+    # Apply the Splunk Monitoring Console CR
+    - name: Apply Splunk Monitoring Console CR (accept license, imagePullSecrets, etc.)
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        template: "../roles/splunk_crd/templates/monitoring-console.yml.j2"

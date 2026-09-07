@@ -1,0 +1,21 @@
+---
+- name: Deploy Splunk Standalone (CRD)
+  hosts: controller
+  gather_facts: false
+
+  vars:
+    _name: "{{ splunk_standalone_name | default('splunk-standalone') }}"
+    _ns: "{{ splunk_namespace | default('splunk') }}"
+    k8s_kubeconfig: "/home/devops/.kube/config"
+
+
+  tasks:
+    # Apply the Splunk Standalone CR
+    - name: Apply Splunk Standalone CR (accept license, imagePullSecrets, etc.)
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        template: "../roles/splunk_crd/templates/s1-standalone-s3.yml.j2"
+
+    # Wait for the Splunk Standalone CR to be ready
+    # Show summary of the CR

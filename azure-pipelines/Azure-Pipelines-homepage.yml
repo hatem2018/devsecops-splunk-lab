@@ -1,0 +1,39 @@
+trigger: none     # Exécution manuelle uniquement
+
+pool:
+  name: LabAgents   # Ton agent self-hosted
+
+variables:
+  - group: LabSecret
+  - name: PLAYBOOK_PATH
+    value: "infrastructure/ansible/playbooks/80-deploy-k3s-homepage.yml"
+  - name: INVENTORY_PATH
+    value: "infrastructure/ansible/inventories/hosts.yml"
+
+steps:
+  - checkout: self
+    clean: true
+
+  # ----------------------------
+  # Run Homepage Deployment
+  # ----------------------------
+  - script: |
+      echo "=== Deploying Homepage Dashboard ==="
+
+      ansible-playbook \
+        $(System.DefaultWorkingDirectory)/$(PLAYBOOK_PATH) \
+        -i $(System.DefaultWorkingDirectory)/$(INVENTORY_PATH) \
+        -e "vault_ansible_ssh_pass=$(vault_ansible_ssh_pass)" \
+        -e "ansible_python_interpreter=/usr/bin/python3"
+
+    displayName: "Run Ansible playbook to deploy Homepage"
+
+  # ----------------------------
+  # Validate cluster state
+  # ----------------------------
+  - script: |
+      echo "=== Validate homepage and k3s cluster status ==="
+      kubectl get pods -n homepage -o wide || true
+      kubectl get ingress -n homepage || true
+      kubectl get nodes -o wide || true
+    displayName: "Show Homepage & cluster nodes"

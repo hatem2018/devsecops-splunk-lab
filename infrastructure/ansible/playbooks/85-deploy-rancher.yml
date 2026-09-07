@@ -1,0 +1,81 @@
+# infrastructure/ansible/playbooks/85-deploy-rancher.yml
+
+- name: Deploy Rancher Dashboard
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    kubeconfig_path: "/home/devops/.kube/config"
+    rancher_bootstrap_password: "{{ vault_rancher_admin_password }}"
+    rancher_hostname: "rancher.devops-lab.dev"
+    rancher_replicas: 1
+
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+
+  tasks:
+
+    - name: Remove old Rancher values
+      file:
+        path: "/tmp/rancher-values.yaml"
+        state: absent
+
+    # 1. Create namespace
+    - name: Create cattle-system namespace
+      ansible.builtin.command: |
+        kubectl create namespace cattle-system
+      register: ns_out
+      failed_when: ns_out.rc not in [0,1]
+      changed_when: "'created' in ns_out.stderr"
+
+    # 2. Create TLS secret for Kong/Cloudflare
+    - name: Create Rancher TLS secret
+      ansible.builtin.command: |
+        kubectl create secret tls rancher-tls \
+          -n cattle-system \
+          --cert=/etc/ssl/rancher/fullchain.pem \
+          --key=/etc/ssl/rancher/privkey.pem
+      register: tls_out
+      failed_when: tls_out.rc not in [0,1]
+      changed_when: "'created' in tls_out.stderr"
+
+    # 3. Helm repo
+    - name: Add Rancher Helm repo
+      ansible.builtin.command: |
+        helm repo add rancher-latest https://releases.rancher.com/server-charts/latest
+      register: repo
+      failed_when: repo.rc not in [0,1]
+
+    - name: Helm repo update
+      ansible.builtin.command: helm repo update
+
+    # 4. Generate values YAML
+    - name: Template Rancher values
+      ansible.builtin.template:
+        src: "../roles/rancher/templates/rancher-values.yaml.j2"
+        dest: "/tmp/rancher-values.yaml"
+
+    # 5. Deploy Rancher (correct ingress mode)
+    - name: Install Rancher via Helm
+      ansible.builtin.command: |
+        helm upgrade --install rancher rancher-latest/rancher \
+          -n cattle-system \
+          -f /tmp/rancher-values.yaml
+      register: install_out
+
+    # 6. Wait for rollout
+    - name: Wait for Rancher deployment
+      ansible.builtin.command: |
+        kubectl rollout status deploy/rancher -n cattle-system --timeout=600s
+      register: rollout_out
+
+    # 7. Debug
+    - name: Display Rancher deployment status
+      debug:
+        msg: |
+          Rancher installation output:
+          {{ install_out.stdout }}
+
+          Rollout status:
+          {{ rollout_out.stdout }}

@@ -1,0 +1,36 @@
+replicaCount: {{ sc4s_replicas }}
+
+image:
+{% if sc4s_image %}
+  repository: {{ sc4s_image | regex_replace(':.+$','') }}
+  tag: {{ (sc4s_image.split(':')|last) if (':' in sc4s_image) else 'latest' }}
+{% endif %}
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+{% if registry_enabled %}
+  - name: {{ sc4s_image_pull_secret }}
+{% else %}
+  []
+{% endif %}
+
+env:
+  - name: SC4S_DEST_SPLUNK_HEC_DEFAULT_URL
+    value: "{{ splunk_hec_url }}"
+  - name: SC4S_DEST_SPLUNK_HEC_DEFAULT_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: sc4s-hec
+        key: token
+  - name: SC4S_DEST_SPLUNK_HEC_DEFAULT_TLS_VERIFY
+    value: "no"
+
+extraObjects:
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: sc4s-hec
+      namespace: {{ sc4s_namespace }}
+    type: Opaque
+    stringData:
+      token: "{{ splunk_hec_token }}"

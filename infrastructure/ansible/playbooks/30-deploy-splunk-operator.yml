@@ -1,0 +1,84 @@
+---
+- name: Deploy Splunk Operator via Helm
+  hosts: controller
+  become: true
+  gather_facts: false
+
+  vars:
+    k8s_kubeconfig: /home/devops/.kube/config
+    splunk_operator_repo: https://splunk.github.io/splunk-operator/
+    splunk_operator_namespace: splunk-operator
+
+  tasks:
+    - name: Ensure required CRDs for Splunk Operator are applied
+      ansible.builtin.command:
+        cmd: >
+          kubectl apply
+          -f https://github.com/splunk/splunk-operator/releases/download/3.0.0/splunk-operator-crds.yaml
+          --server-side --validate=false
+          --kubeconfig "{{ k8s_kubeconfig }}"
+      register: splunk_crds
+      changed_when: "'serverside-applied' in splunk_crds.stdout or 'created' in splunk_crds.stdout"
+      failed_when: splunk_crds.rc != 0
+
+
+
+    - name: Ensure required Python packages are installed
+      ansible.builtin.pip:
+        name:
+          - kubernetes
+          - openshift
+        state: present
+
+    - name: Ensure Splunk namespaces exist
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ item }}"
+        kubeconfig: "{{ k8s_kubeconfig }}"
+      loop:
+        - splunk-operator
+        - splunk
+        - sc4s
+
+    - name: Add Splunk Helm repository
+      kubernetes.core.helm_repository:
+        name: splunk
+        repo_url: "{{ splunk_operator_repo }}"
+        kubeconfig: "{{ k8s_kubeconfig }}"
+
+    - name: Deploy or upgrade Splunk Operator via Helm
+      kubernetes.core.helm:
+        name: splunk-operator
+        chart_ref: splunk/splunk-operator
+        release_namespace: "{{ splunk_operator_namespace }}"
+        create_namespace: false
+        wait: true
+        atomic: true
+        kubeconfig: "{{ k8s_kubeconfig }}"
+
+    # 5️⃣ Wait for Splunk Operator pod to be ready
+    - name: Wait for Splunk Operator controller-manager to be Ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        namespace: "{{ splunk_operator_namespace }}"
+        name: splunk-operator-controller-manager
+        kubeconfig: "{{ k8s_kubeconfig }}"
+      register: op_info
+      until: >
+        op_info.resources | length > 0 and
+        (op_info.resources[0].status.readyReplicas is defined) and
+        (op_info.resources[0].status.readyReplicas | int) > 0
+      retries: 30
+      delay: 10
+
+    # 6️⃣ Show summary
+    - name: Display final operator status
+      debug:
+        msg:
+          - "✅ Splunk Operator deployed successfully!"
+          - "Namespace: {{ splunk_operator_namespace }}"

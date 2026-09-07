@@ -1,0 +1,33 @@
+trigger: none
+pr: none
+
+pool:
+  name: LabAgents
+
+variables:
+  - group: LabSecret   # contient vault_ansible_ssh_pass / vault_controller_ssh_pass
+  - name: PLAYBOOK_PATH
+    value: "infrastructure/ansible/playbooks/66-deploy-splunk-idx.yml"
+  - name: INVENTORY_PATH
+    value: "infrastructure/ansible/inventories/hosts.yml"
+  - name: ANSIBLE_CONFIG
+    value: "infrastructure/ansible/ansible.cfg"
+  - name: KUBECONFIG_LOCAL_PATH
+    value: "/home/devops/.kube/config"
+
+steps:
+  - checkout: self
+    clean: true
+
+  - script: |
+      echo "=== Deploy Splunk IDXC on K3s ==="
+      cd $(System.DefaultWorkingDirectory)
+
+      ansible-playbook \
+        $(PLAYBOOK_PATH) \
+        -i $(INVENTORY_PATH) \
+        -e "vault_ansible_ssh_pass=$(vault_ansible_ssh_pass)" \
+        -e "vault_controller_ssh_pass=$(vault_controller_ssh_pass)" \
+        -e "kubeconfig_local_path=$(KUBECONFIG_LOCAL_PATH)" \
+        -e "ansible_python_interpreter=/usr/bin/python3"
+    displayName: "Run deploy-splunk-cluster playbook"

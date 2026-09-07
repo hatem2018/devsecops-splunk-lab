@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: homepage
+  namespace: homepage
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/protocols: http,https
+    konghq.com/https-redirect-status-code: "307"
+spec:
+  ingressClassName: kong
+  rules:
+    - host: home.devops-lab.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: homepage
+                port:
+                  number: 80

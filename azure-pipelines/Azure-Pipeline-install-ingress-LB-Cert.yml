@@ -1,0 +1,25 @@
+trigger: none
+
+pool:
+  name: LabAgents
+
+variables:
+  - group: LabSecret   # Variable Group contenant vault_ansible_ssh_pass
+  - name: PLAYBOOK_PATH
+    value: "infrastructure/ansible/playbooks/deploy-k3s-ingress-LB-Cert-stack.yml"
+  - name: INVENTORY_PATH
+    value: "infrastructure/ansible/inventories/hosts.yml"
+  - name: ANSIBLE_CONFIG
+    value: "infrastructure/ansible/ansible.cfg"
+
+steps:
+  - checkout: self
+
+  - script: |
+      echo "=== RUNNING deploy-k3s-ingress-LB-Cert-stack playbook ==="
+      cd $(System.DefaultWorkingDirectory)
+      ansible-playbook ${PLAYBOOK_PATH} \
+      -i $(System.DefaultWorkingDirectory)/infrastructure/ansible/inventories/hosts.yml \
+      -e "vault_ansible_ssh_pass=$(vault_ansible_ssh_pass)" \
+      -e "vault_kong_admin_password=$(vault_kong_admin_password)"
+    displayName: "Run Deploy K3s Ingress LB Cert Stack playbook"

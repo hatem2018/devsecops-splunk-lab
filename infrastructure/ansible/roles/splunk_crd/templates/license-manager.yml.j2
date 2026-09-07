@@ -1,0 +1,73 @@
+apiVersion: enterprise.splunk.com/v4
+kind: LicenseManager
+metadata:
+  name: lm
+  namespace: splunk
+spec:
+  # Required for SOK 3.0.0
+  splunkGeneralTerms:
+    acceptance: true
+
+  replicas: 1
+  image: docker.io/splunk/splunk:9.3.7
+  imagePullPolicy: "IfNotPresent"
+  licenseAccepted: true
+
+  # --- PROBE CONFIGURATION ---
+  # License Manager is critical but less busy than Indexers/SHs.
+
+  startupProbe:
+    failureThreshold: 60    # 60 * 10s = 10 minutes max startup time
+    periodSeconds: 10
+    timeoutSeconds: 5
+    tcpSocket:
+      port: 8089
+
+  livenessProbe:
+    failureThreshold: 6
+    periodSeconds: 30       # Check less frequently
+    timeoutSeconds: 10
+    exec:                   # Use command check for stability
+      command:
+        - /bin/sh
+        - -c
+        - /opt/splunk/bin/splunk status
+
+  readinessProbe:
+    failureThreshold: 3
+    periodSeconds: 10
+    httpGet:
+      path: /services/server/health/readiness
+      port: 8089
+      scheme: HTTPS
+
+  # --- STORAGE CONFIG ---
+  etcVolumeStorageConfig:
+    storageClassName: local-path
+    storageCapacity: 30Gi
+
+  # --- RESOURCES (Less resource-intensive than peers) ---
+  resources:
+    limits:
+      cpu: 4
+      memory: 8Gi
+    requests:
+      cpu: 2
+      memory: 4Gi
+
+  # --- APP REPO (User's Azure Config) ---
+  appRepo:
+    appsRepoPollIntervalSeconds: 600
+    defaults:
+      scope: local
+      volumeName: azure-app-volume
+    appSources:
+      - name: search-app
+        location: search-app/
+    volumes:
+      - name: azure-app-volume
+        storageType: blob
+        provider: azure
+        endpoint: https://<storage-account>.blob.core.windows.net
+        path: splunk-apps/
+        secretRef: azureblob-secret

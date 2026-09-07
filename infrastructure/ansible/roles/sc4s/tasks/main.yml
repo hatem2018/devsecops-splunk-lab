@@ -1,0 +1,23 @@
+- name: Ensure namespace exists (idempotent)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_local_path }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ sc4s_namespace }}"
+
+- name: Create HEC token secret (optional - already created via extraObjects)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_local_path }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: sc4s-hec
+        namespace: "{{ sc4s_namespace }}"
+      type: Opaque
+      stringData:
+        token: "{{ splunk_hec_token }}"

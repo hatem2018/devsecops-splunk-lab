@@ -1,0 +1,179 @@
+trigger: none   # Exécution manuelle
+
+pool:
+  name: LabAgents   # Agent self-hosted
+
+variables:
+
+- group: LabSecret
+
+# ============================================================
+# Kubernetes
+# ============================================================
+
+- name: KUBECONFIG_PATH
+  value: "/home/devops/.kube/config"
+
+# ============================================================
+# n8n
+# ============================================================
+
+- name: N8N_BASE_VERSION
+  value: "2.37.10"
+
+- name: N8N_IMAGE_TAG
+  value: "2.37.10-mcp1"
+
+# ============================================================
+# Nexus
+# ============================================================
+
+- name: NEXUS_REGISTRY
+  value: "10.0.0.110:8082"
+
+- name: NEXUS_REPO
+  value: "n8n"
+
+- name: LOCAL_IMAGE
+  value: "$(NEXUS_REGISTRY)/$(NEXUS_REPO):$(N8N_IMAGE_TAG)"
+
+
+steps:
+
+# ============================================================
+# Checkout
+# ============================================================
+
+- checkout: self
+
+
+# ============================================================
+# 1. Build n8n custom image with MCP community node
+# ============================================================
+
+- script: |
+    set -e
+
+    echo "============================================================"
+    echo "🔐 Login Nexus"
+    echo "============================================================"
+
+    echo "$(nexus_password)" | docker login "$(NEXUS_REGISTRY)" \
+      -u admin \
+      --password-stdin
+
+
+    echo "============================================================"
+    echo "🧱 Build custom n8n image"
+    echo "Base version : $(N8N_BASE_VERSION)"
+    echo "Image        : $(LOCAL_IMAGE)"
+    echo "============================================================"
+
+    docker build \
+      -t "$(LOCAL_IMAGE)" \
+      - <<EOF
+
+    FROM n8nio/n8n:$(N8N_BASE_VERSION)
+
+    USER root
+
+    # --------------------------------------------------------
+    # Create directory for n8n community nodes
+    # --------------------------------------------------------
+
+    RUN mkdir -p /home/node/.n8n/nodes \
+        && chown -R node:node /home/node/.n8n
+
+    USER node
+
+    WORKDIR /home/node/.n8n/nodes
+
+    # --------------------------------------------------------
+    # Install MCP community node
+    #
+    # Important:
+    # --omit=peer prevents npm from installing another
+    # n8n-workflow dependency tree.
+    #
+    # n8n-workflow is already provided by the base n8n image.
+    # --------------------------------------------------------
+
+    RUN npm init -y \
+        && npm install --omit=peer n8n-nodes-mcp
+
+    USER root
+
+    RUN chown -R node:node /home/node/.n8n
+
+    USER node
+
+    EOF
+
+
+    echo "============================================================"
+    echo "⬆️ Push image to Nexus"
+    echo "============================================================"
+
+    docker push "$(LOCAL_IMAGE)"
+
+
+    echo "============================================================"
+    echo "🧹 Cleanup Docker build cache"
+    echo "============================================================"
+
+    docker builder prune -f
+
+
+    echo "============================================================"
+    echo "✅ Image successfully built and pushed"
+    echo "$(LOCAL_IMAGE)"
+    echo "============================================================"
+
+  displayName: "Build n8n image with MCP nodes"
+
+
+# ============================================================
+# 2. Deploy / Upgrade n8n via Ansible + Helm
+# ============================================================
+
+- script: |
+    set -e
+
+    echo "============================================================"
+    echo "📂 Ansible"
+    echo "============================================================"
+
+    cd infrastructure/ansible
+
+
+    echo "============================================================"
+    echo "🔧 Configure Kubernetes"
+    echo "============================================================"
+
+    export KUBECONFIG="$(KUBECONFIG_PATH)"
+
+
+    echo "============================================================"
+    echo "🔐 Export secrets"
+    echo "============================================================"
+
+    export OPENAI_API_KEY="$(OPENAI_API_KEY)"
+    export N8N_ENCRYPTION_KEY="$(N8N_ENCRYPTION_KEY)"
+    export N8N_BASIC_AUTH_PASSWORD="$(N8N_BASIC_AUTH_PASSWORD)"
+
+
+    echo "============================================================"
+    echo "🚀 Deploy / Upgrade n8n"
+    echo "============================================================"
+
+    ansible-playbook playbooks/90-deploy-n8n.yml \
+      -e "kubeconfig=$(KUBECONFIG_PATH)" \
+      -e "n8n_image_repository=$(NEXUS_REGISTRY)/$(NEXUS_REPO)" \
+      -e "n8n_image_tag=$(N8N_IMAGE_TAG)"
+
+
+    echo "============================================================"
+    echo "✅ Deployment completed"
+    echo "============================================================"
+
+  displayName: "Deploy / Upgrade n8n on k3s"

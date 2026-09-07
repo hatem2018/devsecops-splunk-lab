@@ -1,0 +1,45 @@
+apiVersion: enterprise.splunk.com/v4
+kind: ClusterManager
+metadata:
+  name: cm
+  namespace: splunk
+spec:
+  replicas: 1
+  licenseManagerRef:
+    name: lm
+
+
+  imagePullPolicy: "IfNotPresent"
+  image: docker.io/splunk/splunk:9.3.7
+
+  etcVolumeStorageConfig:
+    storageClassName: local-path
+    storageCapacity: 30Gi
+
+  appRepo:
+    appsRepoPollIntervalSeconds: 600
+    defaults:
+      volumeName: cm-apps
+      scope: local
+    volumes:
+      - name: cm-apps
+        storageType: blob
+        provider: azure
+        endpoint: https://<storage-account>.blob.core.windows.net
+        path: splunk-apps/cm-apps/
+        secretRef: azureblob-secret
+    appSources:
+      - name: cm-apps
+        location: cm-apps/
+
+# -------------------------
+  # Startup / Probes
+  # -------------------------
+  readinessInitialDelaySeconds: 300
+  readinessTimeoutSeconds: 60
+  livenessInitialDelaySeconds: 600
+  livenessTimeoutSeconds: 60
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 20
+    timeoutSeconds: 10

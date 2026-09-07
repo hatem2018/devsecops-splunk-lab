@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n8n
+  labels:
+    app: n8n
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: n8n
+  template:
+    metadata:
+      labels:
+        app: n8n
+    spec:
+      imagePullSecrets:
+{{- range .Values.imagePullSecrets }}
+        - name: {{ .name }}
+{{- end }}
+
+      # ============================================================
+      # INIT CONTAINER — install MCP nodes into the PVC
+      # ============================================================
+      initContainers:
+        - name: install-mcp-nodes
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "[init] Installing n8n-nodes-mcp into persistent volume"
+
+              mkdir -p /home/node/.n8n/nodes
+              cd /home/node/.n8n/nodes
+
+              if [ ! -d node_modules/n8n-nodes-mcp ]; then
+                echo "[init] MCP nodes not found, installing..."
+                npm init -y
+                npm install n8n-nodes-mcp
+              else
+                echo "[init] MCP nodes already installed, skipping"
+              fi
+          volumeMounts:
+            - name: n8n-data
+              mountPath: /home/node/.n8n
+
+      # ============================================================
+      # MAIN CONTAINER — n8n
+      # ============================================================
+      containers:
+        - name: n8n
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          ports:
+            - containerPort: 5678
+
+          # ============================
+          # Non-sensitive env variables
+          # ============================
+          env:
+            - name: NODE_ENV
+              value: "production"
+
+            - name: N8N_BASIC_AUTH_ACTIVE
+              value: "true"
+
+            - name: N8N_USER_MANAGEMENT_DISABLED
+              value: "true"
+
+            - name: N8N_HOST
+              value: "{{ .Values.ingress.hostname }}"
+
+            - name: N8N_PORT
+              value: "5678"
+
+            - name: N8N_PROTOCOL
+              value: "https"
+
+{{- if .Values.env }}
+{{ toYaml .Values.env | nindent 12 }}
+{{- end }}
+
+          # ============================
+          # Sensitive env variables
+          # ============================
+          envFrom:
+            - secretRef:
+                name: n8n-env
+
+          volumeMounts:
+            - name: n8n-data
+              mountPath: /home/node/.n8n
+
+          resources:
+{{- toYaml .Values.resources | nindent 12 }}
+
+      # ============================================================
+      # Volumes
+      # ============================================================
+      volumes:
+        - name: n8n-data
+{{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: n8n-data
+{{- else }}
+          emptyDir: {}
+{{- end }}

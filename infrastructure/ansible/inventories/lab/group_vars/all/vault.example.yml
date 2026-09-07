@@ -1,0 +1,21 @@
+# Example Ansible Vault variables
+# Copy this file to vault.yml and replace placeholder values.
+# Never commit the real vault.yml file.
+
+vault_ansible_ssh_pass: "CHANGE_ME"
+
+vault_controller_ssh_pass: "CHANGE_ME"
+
+vault_k3s_token: "CHANGE_ME"
+
+vault_registry_username: "admin"
+
+vault_registry_password: "CHANGE_ME"
+
+vault_splunk_hec_token: "CHANGE_ME"
+
+vault_kong_admin_password: "CHANGE_ME"
+
+vault_rancher_admin_password: "CHANGE_ME"
+
+vault_hv_secret_id: "CHANGE_ME"

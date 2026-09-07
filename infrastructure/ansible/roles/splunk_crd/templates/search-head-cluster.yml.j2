@@ -1,0 +1,101 @@
+apiVersion: enterprise.splunk.com/v4
+kind: SearchHeadCluster
+metadata:
+  name: splunk-shc
+  namespace: splunk
+
+spec:
+  splunkGeneralTerms:
+    acceptance: true
+
+  replicas: 3
+
+  defaults: |
+    [web]
+    serverName = splunk.devops-lab.dev
+    serverAlias = splunk.devops-lab.dev
+    enableSplunkWebSSL = false
+    root_endpoint =
+    trustedIP = 0.0.0.0/0
+    httpport = 8000
+    mgmtHostPort = 8089
+
+    [settings]
+    enableStrictTransportSecurity = false
+
+    [tools.proxy]
+    on = true
+    trust_x_forwarded_for = true
+    trust_x_forwarded_host = true
+    trust_x_forwarded_proto = true
+
+
+  # ======== Liens Splunk ========
+  licenseManagerRef:
+    name: lm
+
+  indexerClusterRef:
+    name: cm
+
+  # ======== App Framework (S3) ========
+  appRepo:
+    appsRepoPollIntervalSeconds: 600
+    defaults:
+      scope: cluster
+      volumeName: s3-app-volume
+    appSources:
+      - name: search-app
+        location: search-app/
+    volumes:
+      - name: s3-app-volume
+        storageType: s3
+        provider: aws
+        endpoint: https://s3.ca-central-1.amazonaws.com
+        region: ca-central-1
+        path: splunk-s3-bucket-dev/
+        secretRef: s3-secret
+
+  # ======== Probes ========
+  startupProbe:
+    failureThreshold: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - /opt/splunk/bin/splunk status
+
+  livenessProbe:
+    failureThreshold: 6
+    periodSeconds: 30
+    timeoutSeconds: 15
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - /opt/splunk/bin/splunk status
+
+  readinessProbe:
+    failureThreshold: 3
+    periodSeconds: 10
+    timeoutSeconds: 5
+    httpGet:
+      path: /services/server/health/readiness
+      port: 8089
+      scheme: HTTPS
+
+  # ======== Resources ========
+  resources:
+    limits:
+      cpu: 4
+      memory: 8Gi
+    requests:
+      cpu: 2
+      memory: 4Gi
+
+  # ======== Storage ========
+  volumes:
+    - name: splunk-pvc-shc
+      storageClassName: local-path
+      storage: 100Gi

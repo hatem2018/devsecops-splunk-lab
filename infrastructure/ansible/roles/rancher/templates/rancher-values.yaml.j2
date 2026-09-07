@@ -1,0 +1,26 @@
+hostname: {{ rancher_hostname }}
+bootstrapPassword: {{ rancher_bootstrap_password }}
+replicas: {{ rancher_replicas }}
+
+ingress:
+  enabled: true
+  ingressClassName: "kong"
+
+  tls: false  # <<=== IMPORTANT : ne jamais activer ici
+
+  extraAnnotations:
+    konghq.com/protocols: "http,https"
+    konghq.com/strip-path: "false"
+    konghq.com/preserve-host: "true"
+    konghq.com/https-redirect-status-code: "307"
+
+    konghq.com/configuration-snippet: |
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Forwarded-Port 443;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+features:
+  fleet: false
+  capi: false
+  turtles: false
+  provisioningv2: false

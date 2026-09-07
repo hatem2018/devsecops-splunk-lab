@@ -1,0 +1,55 @@
+---
+- name: Deploy Homepage Dashboard
+  hosts: localhost
+  connection: local
+
+  vars:
+    kubeconfig_path: "/home/devops/.kube/config"
+
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+
+  tasks:
+    - name: Apply namespace
+      kubernetes.core.k8s:
+        state: present
+        src: "../roles/devsecops-homepage/namespace.yaml"
+
+    - name: Deploy ServiceAccount for Homepage
+      kubernetes.core.k8s:
+        state: present
+        src: "../roles/devsecops-homepage/serviceaccount.yaml"
+
+    - name: Deploy Secret for Homepage
+      kubernetes.core.k8s:
+        state: present
+        src: "../roles/devsecops-homepage/secret.yaml"
+
+    - name: Deploy ClusterRoleBinding for Homepage
+      kubernetes.core.k8s:
+        state: present
+        src: "../roles/devsecops-homepage/ClusterRoleBinding.yaml"
+
+    # ---------------------------
+    # NEW - Apply ConfigMap (must come BEFORE deployment)
+    # ---------------------------
+    - name: Apply Homepage ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        src: "../roles/devsecops-homepage/configmap.yaml"
+
+
+    - name: Deploy Homepage deployment
+      kubernetes.core.k8s:
+        state: present
+        src: "../roles/devsecops-homepage/deployment.yaml"
+
+    - name: Deploy Homepage service
+      kubernetes.core.k8s:
+        state: present
+        src: "../roles/devsecops-homepage/service.yaml"
+
+    - name: Deploy Homepage ingress (Kong)
+      kubernetes.core.k8s:
+        state: present
+        src: "../roles/devsecops-homepage/ingress.yaml"

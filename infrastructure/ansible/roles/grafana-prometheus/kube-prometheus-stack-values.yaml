@@ -1,0 +1,81 @@
+# --------- Paramètres globaux ----------
+global:
+  rbac:
+    create: true
+
+# --------- Grafana ----------
+grafana:
+  adminUser: admin
+  adminPassword: "CHANGE_ME"   # change immédiatement en prod
+
+  # Persistance des dashboards / config
+  persistence:
+    enabled: true
+    type: pvc
+    storageClassName: local-path
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  # Ingress via Kong (adapter si besoin)
+  ingress:
+    enabled: true
+    ingressClassName: kong
+    annotations:
+      konghq.com/strip-path: "false"
+      konghq.com/https-redirect-status-code: "307"
+      konghq.com/preserve-host: "true"
+      konghq.com/protocols: http,https
+    hosts:
+      - grafana.devops-lab.dev
+    path: /
+    pathType: Prefix
+
+  # Datasources supplémentaires possibles (ex : Loki, Tempo, etc.)
+  additionalDataSources: []
+  defaultDashboardsEnabled: true
+
+# --------- Prometheus ----------
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    retention: 15d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+# --------- Alertmanager ----------
+alertmanager:
+  enabled: true
+
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+# --------- kube-state-metrics ----------
+kubeStateMetrics:
+  enabled: true
+
+# --------- node-exporter ----------
+prometheus-node-exporter:
+  enabled: true
+
+# --------- blackbox-exporter (optionnel) ----------
+prometheus-blackbox-exporter:
+  enabled: false

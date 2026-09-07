@@ -1,0 +1,35 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+
+# Ansible / secrets
+**/vault.yml
+**/vault.yaml
+**/credentials.json
+**/kubeconfig
+**/.kube/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Certificates / private keys
+*.pem
+*.key
+*.p12
+*.pfx
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs / temp
+*.log
+tmp/
+temp/

@@ -1,0 +1,36 @@
+trigger: none
+
+pool:
+  name: LabAgents
+
+variables:
+  - group: LabSecret
+  - name: PLAYBOOK_PATH
+    value: "infrastructure/ansible/playbooks/85-deploy-rancher.yml"
+  - name: INVENTORY_PATH
+    value: "infrastructure/ansible/inventories/hosts.yml"
+
+  # ----------------------------
+  # 4. Run the Ansible playbook
+  # ----------------------------
+steps:
+  - checkout: self
+    clean: true
+
+  # 3. Execute the Playbook (Single-line command for reliability)
+  - script: |
+      echo "=== Deploying rancher stack ==="
+
+      ansible-playbook \
+        $(System.DefaultWorkingDirectory)/$(PLAYBOOK_PATH) \
+        -i $(System.DefaultWorkingDirectory)/$(INVENTORY_PATH) \
+        -e "vault_ansible_ssh_pass=$(vault_ansible_ssh_pass)" \
+        -e "vault_rancher_admin_password=$(vault_rancher_admin_password)" \
+        -e "ansible_python_interpreter=/usr/bin/python3"
+
+    displayName: "Run Ansible playbook to deploy rancher stack"
+
+  - script: |
+      echo "=== Validate cluster status ==="
+      kubectl get nodes -o wide || true
+    displayName: "Show cluster nodes"

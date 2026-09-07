@@ -1,0 +1,11 @@
+apiVersion: v2
+name: n8n
+description: Simple n8n Helm chart for your DevSecOps lab
+type: application
+version: 0.1.0
+appVersion: "2.37.10"
+keywords:
+  - n8n
+  - workflow
+  - automation
+  - devsecops

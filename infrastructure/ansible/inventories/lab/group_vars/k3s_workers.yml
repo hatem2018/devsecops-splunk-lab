@@ -1,0 +1,17 @@
+---
+k3s_control_node: false
+k3s_state: installed
+
+# Explicit full API URL of master
+k3s_registration_address: "https://10.0.0.102:6443"
+
+# Explicit empty server block to prevent merge with master's config
+k3s_server: {}
+
+# Correct token to join existing cluster
+k3s_control_token: "{{ vault_k3s_token }}"
+
+# Agent-specific settings
+k3s_agent:
+  node_name: "{{ inventory_hostname }}"
+  with_node_id: true

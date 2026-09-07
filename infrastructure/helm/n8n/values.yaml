@@ -1,0 +1,47 @@
+replicaCount: 1
+
+image:
+  repository: 10.0.0.110:8082/n8n
+  tag: "2.37.10-mcp1"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: nexus-regcred
+
+service:
+  type: ClusterIP
+  port: 5678
+
+ingress:
+  enabled: true
+  className: kong
+  hostname: "n8n.devops-lab.dev"
+
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/protocols: "http,https"
+    konghq.com/preserve-host: "true"
+
+  path: /
+  pathType: Prefix
+
+persistence:
+  enabled: true
+  existingClaim: n8n-data
+  size: 5Gi
+  storageClassName: local-path
+
+  accessModes:
+    - ReadWriteOnce
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "512Mi"
+
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+# Environment variables are injected by Ansible
+env: []

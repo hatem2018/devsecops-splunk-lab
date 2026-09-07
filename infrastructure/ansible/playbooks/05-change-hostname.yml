@@ -1,0 +1,14 @@
+- name: Définir un hostname unique sur chaque VM
+  hosts: k3s_masters,k3s_workers,registry
+  become: true
+  tasks:
+    - name: Configurer le hostname selon l'inventaire
+      hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Mettre à jour /etc/hosts pour correspondre
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^127\\.0\\.1\\.1'
+        line: "127.0.1.1 {{ inventory_hostname }}"
+        state: present

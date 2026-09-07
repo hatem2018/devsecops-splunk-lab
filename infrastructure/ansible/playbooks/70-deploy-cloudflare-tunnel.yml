@@ -1,0 +1,126 @@
+---
+- name: Deploy Cloudflare Tunnel Agent + Kong integration
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    kubeconfig_path: "/home/devops/.kube/config"
+
+    cloudflare_namespace: "cloudflared"
+    cloudflare_tunnel_id: "b242ee6c-f64f-479a-bfaa-75f648b6d37e"
+    cloudflare_tunnel_name: "k3s-tunnel"
+
+    cloudflare_credentials_file: "{{ cloudflare_credentials_file }}"
+
+    kong_service: "kong-kong-proxy.kong.svc.cluster.local"
+    kong_http_port: 80
+
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+
+  tasks:
+
+    ###########################################################################
+    # Validate required variables
+    ###########################################################################
+    - name: Fail if Cloudflare variables missing
+      fail:
+        msg: "cloudflare_account_id and cloudflare_api_token must be provided"
+      when:
+        - cloudflare_account_id is not defined or cloudflare_account_id == ""
+        - cloudflare_api_token is not defined or cloudflare_api_token == ""
+
+    ###########################################################################
+    # Namespace
+    ###########################################################################
+    - name: Create cloudflared namespace
+      shell: |
+        kubectl create ns {{ cloudflare_namespace }} --dry-run=client -o yaml | kubectl apply -f -
+      changed_when: false
+
+    ###########################################################################
+    # Secret: credentials.json
+    ###########################################################################
+    - name: Upload cloudflared credentials.json
+      shell: |
+        kubectl -n {{ cloudflare_namespace }} create secret generic tunnel-credentials \
+          --from-file=credentials.json={{ cloudflare_credentials_file }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+      changed_when: false
+
+    ###########################################################################
+    # ConfigMap: config.yaml
+    ###########################################################################
+    - name: Create cloudflared config.yaml
+      copy:
+        dest: /tmp/cloudflared-config.yaml
+        content: |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: cloudflared-config
+            namespace: {{ cloudflare_namespace }}
+          data:
+            config.yaml: |
+              tunnel: {{ cloudflare_tunnel_id }}
+              credentials-file: /etc/cloudflared/credentials.json
+
+              ingress:
+                - hostname: splunk.devops-lab.dev
+                  service: http://{{ kong_service }}:{{ kong_http_port }}
+                - service: http_status:404
+
+    - name: Apply cloudflared ConfigMap
+      shell: kubectl apply -f /tmp/cloudflared-config.yaml
+
+
+    ###########################################################################
+    # Deployment: cloudflared
+    ###########################################################################
+    - name: Deploy cloudflared
+      copy:
+        dest: /tmp/cloudflared.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: cloudflared
+            namespace: {{ cloudflare_namespace }}
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: cloudflared
+            template:
+              metadata:
+                labels:
+                  app: cloudflared
+              spec:
+                containers:
+                  - name: cloudflared
+                    image: cloudflare/cloudflared:latest
+                    args:
+                      - tunnel
+                      - --no-autoupdate
+                      - run
+                      - {{ cloudflare_tunnel_id }}
+
+                    volumeMounts:
+                      - name: creds
+                        mountPath: /etc/cloudflared/credentials.json
+                        subPath: credentials.json
+                      - name: config
+                        mountPath: /etc/cloudflared/config.yaml
+                        subPath: config.yaml
+
+                volumes:
+                  - name: creds
+                    secret:
+                      secretName: tunnel-credentials
+                  - name: config
+                    configMap:
+                      name: cloudflared-config
+
+    - name: Apply cloudflared deployment
+      shell: kubectl apply -f /tmp/cloudflared.yaml

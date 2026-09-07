@@ -1,0 +1,57 @@
+trigger: none
+
+pool:
+  name: LabAgents
+
+variables:
+  - group: LabSecret
+  - name: PLAYBOOK_PATH
+    value: "infrastructure/ansible/playbooks/70-deploy-cloudflare-tunnel.yml"
+
+steps:
+  - checkout: self
+
+  # ----------------------------
+  # 1. Download Cloudflare credentials.json
+  # ----------------------------
+  - task: DownloadSecureFile@1
+    name: cfCreds
+    inputs:
+      secureFile: 'credentials.json'
+    displayName: "Download Cloudflare credentials.json"
+
+  # ----------------------------
+  # 2. Download Cloudflare cert.pem
+  # ----------------------------
+  - task: DownloadSecureFile@1
+    name: cfCert
+    inputs:
+      secureFile: 'cert.pem'
+    displayName: "Download Cloudflare cert.pem"
+
+  # ----------------------------
+  # 3. Copy downloaded secrets into repo folder
+  # ----------------------------
+  - script: |
+      mkdir -p infrastructure/cloudflare
+      cp "$(cfCreds.secureFilePath)" infrastructure/cloudflare/credentials.json
+      echo "Copied credentials.json into infrastructure/cloudflare/"
+      ls -l infrastructure/cloudflare
+    displayName: "Prepare Cloudflare credentials"
+
+  # ----------------------------
+  # 4. Run the Ansible playbook
+  # ----------------------------
+  - script: |
+      echo "=== RUNNING deploy-cloudflare-tunnel playbook ==="
+
+      export CLOUDFLARE_API_TOKEN="$(CLOUDFLARE_API_TOKEN)"
+      export CLOUDFLARE_ACCOUNT_ID="$(CLOUDFLARE_ACCOUNT_ID)"
+
+      # Run playbook
+      ansible-playbook $(PLAYBOOK_PATH) \
+        -i infrastructure/ansible/inventories/hosts.yml \
+        -e "cloudflare_account_id=$CLOUDFLARE_ACCOUNT_ID" \
+        -e "cloudflare_api_token=$CLOUDFLARE_API_TOKEN" \
+        -e "cloudflare_credentials_file=$(System.DefaultWorkingDirectory)/infrastructure/cloudflare/credentials.json"
+    displayName: "Run Deploy Cloudflare Tunnel playbook"

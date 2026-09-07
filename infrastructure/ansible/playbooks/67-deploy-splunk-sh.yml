@@ -1,0 +1,16 @@
+---
+- name: Deploy Splunk SearchHeadCluster (CRDs)
+  hosts: controller
+  gather_facts: false
+
+  vars:
+    _ns: "{{ splunk_namespace | default('splunk') }}"
+    k8s_kubeconfig: "{{ kubeconfig_local_path | default('/home/devops/.kube/config') }}"
+
+  tasks:
+
+    - name: Apply SearchHeadCluster CR
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        template: "../roles/splunk_crd/templates/search-head-cluster.yml.j2"

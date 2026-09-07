@@ -1,0 +1,58 @@
+# ================================================================
+#  VARIABLES GLOBALES - DEVSECOPS LAB
+#  (Ce fichier ne contient aucun secret en clair)
+# ================================================================
+
+# ----------- Authentification SSH -----------
+ansible_user: test
+ansible_ssh_pass: "{{ vault_ansible_ssh_pass }}"   # ← mot de passe chiffré dans vault.yml
+ansible_become: true
+
+# ----------- K3s -----------
+k3s_version: "v1.30.4+k3s1"
+k3s_cluster_name: "devsecops-lab"
+k3s_token: "{{ vault_k3s_token }}"     # tiré du vault aussi
+k8s_kubeconfig: /home/devops/.kube/config
+
+
+
+
+# ----------- Kubeconfig local -----------
+kubeconfig_local_path: "/home/devops/.kube/k3s-lab.yaml"
+
+# ----------- Registry privé -----------
+registry_enabled: true
+registry_server: "nexus.example.com"
+registry_username: "{{ vault_registry_username | default(lookup('community.hashi_vault.hashi_vault', 'secret=kv/data/nexus field=username', errors='ignore')) }}"
+registry_password: "{{ vault_registry_password | default(lookup('community.hashi_vault.hashi_vault', 'secret=kv/data/nexus field=password', errors='ignore')) }}"
+registry_email: "ci@devsecops.lab"
+registry_secret_name: "xxxxxxxxxxxxxx"   # ← nom du secret k8s pour le pull des images privées
+
+# ----------- Splunk -----------
+splunk_namespace: "splunk"
+splunk_operator_namespace: "splunk-operator"
+splunk_operator_chart_version: ">=2.8.0"
+splunk_operator_repo: "https://splunk.github.io/splunk-operator"
+
+splunk_general_terms: "Y"
+splunk_license_url: ""
+splunk_standalone_name: "splunk-standalone"
+splunk_image: "splunk/splunk:10.4.2"
+
+splunk_hec_url: "https://http-inputs-<stack>.splunkcloud.com/services/collector"
+splunk_hec_token: "{{ vault_splunk_hec_token | default(lookup('community.hashi_vault.hashi_vault','secret=kv/data/splunk field=hec_token', errors='ignore')) }}"
+
+# ----------- SC4S -----------
+sc4s_namespace: "sc4s"
+sc4s_chart: "splunk/splunk-connect-for-syslog"
+sc4s_chart_version: ">=1.0.0"
+sc4s_image_pull_secret: "{{ registry_secret_name }}"
+sc4s_replicas: 1
+sc4s_image: ""
+
+# ----------- HashiCorp Vault (optionnel) -----------
+hv_enabled: true
+hv_addr: "{{ lookup('env','VAULT_ADDR') | default('https://vault.devsecops.local:8200', true) }}"
+hv_token: "{{ lookup('env','VAULT_TOKEN') | default(omit) }}"
+hv_approle_role_id: "{{ vault_hv_role_id | default(omit) }}"
+hv_approle_secret_id: "{{ vault_hv_secret_id | default(omit) }}"

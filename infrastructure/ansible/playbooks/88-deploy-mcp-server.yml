@@ -1,0 +1,204 @@
+---
+- name: Deploy k8s-MCP Server to Kubernetes Cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    mcp_namespace: "mcp"
+    mcp_image: "10.0.0.110:8082/k8s-mcp-server:latest"
+    kubeconfig_path: "/home/devops/.kube/config"
+
+  tasks:
+
+    # ----------------------------------------------------------
+    # Namespace
+    # ----------------------------------------------------------
+    - name: Ensure MCP namespace exists
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ mcp_namespace }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+
+        # ----------------------------------------------------------
+    # ServiceAccount (MCP Full Admin)
+    # ----------------------------------------------------------
+    - name: Create MCP ServiceAccount
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ kubeconfig_path }}"
+        definition:
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: mcp-sa
+            namespace: "{{ mcp_namespace }}"
+        # ----------------------------------------------------------
+    # ClusterRole (FULL ADMIN)
+    # ----------------------------------------------------------
+    - name: Create MCP ClusterRole (Full Admin)
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ kubeconfig_path }}"
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: mcp-cluster-admin
+          rules:
+            - apiGroups: ["*"]
+              resources: ["*"]
+              verbs: ["*"]
+        # ----------------------------------------------------------
+    # ClusterRoleBinding
+    # ----------------------------------------------------------
+    - name: Bind MCP ServiceAccount to ClusterRole
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ kubeconfig_path }}"
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: mcp-cluster-admin-binding
+          subjects:
+            - kind: ServiceAccount
+              name: mcp-sa
+              namespace: "{{ mcp_namespace }}"
+          roleRef:
+            kind: ClusterRole
+            name: mcp-cluster-admin
+            apiGroup: rbac.authorization.k8s.io
+
+
+    # ----------------------------------------------------------
+    # Secret kubeconfig
+    # ----------------------------------------------------------
+    - name: Delete Kubeconfig Secret if exists
+      kubernetes.core.k8s:
+        state: absent
+        kind: Secret
+        api_version: v1
+        name: mcp-kubeconfig
+        namespace: "{{ mcp_namespace }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+
+    - name: Create Kubeconfig Secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: mcp-kubeconfig
+            namespace: "{{ mcp_namespace }}"
+          type: Opaque
+          data:
+            kubeconfig: "{{ lookup('file', kubeconfig_path) | b64encode }}"
+        kubeconfig: "{{ kubeconfig_path }}"
+
+    # ----------------------------------------------------------
+    # Deployment (k8s-mcp-server)
+    # ----------------------------------------------------------
+    - name: Deploy MCP Server Deployment
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ kubeconfig_path }}"
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: k8s-mcp-server
+            namespace: "{{ mcp_namespace }}"
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: k8s-mcp-server
+
+            template:
+              metadata:
+                labels:
+                  app: k8s-mcp-server
+
+              spec:
+                serviceAccountName: mcp-sa
+                imagePullSecrets:
+                  - name: nexus-regcred
+
+                containers:
+                  - name: k8s-mcp-server
+                    image: "{{ mcp_image }}"
+                    imagePullPolicy: Always
+                    ports:
+                      - containerPort: 8080
+                    env:
+                      - name: LOG_LEVEL
+                        value: "info"
+                      - name: KUBECONFIG
+                        value: "/root/.kube/config"
+
+                    volumeMounts:
+                      - name: kubeconfig
+                        mountPath: /root/.kube/config
+                        subPath: kubeconfig
+
+                volumes:
+                  - name: kubeconfig
+                    secret:
+                      secretName: mcp-kubeconfig
+
+    # ----------------------------------------------------------
+    # Service
+    # ----------------------------------------------------------
+    - name: Deploy MCP Service
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ kubeconfig_path }}"
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: k8s-mcp-service
+            namespace: "{{ mcp_namespace }}"
+          spec:
+            selector:
+              app: k8s-mcp-server
+            ports:
+              - name: http
+                port: 8080
+                targetPort: 8080
+            type: ClusterIP
+
+    # ----------------------------------------------------------
+    # Ingress (Kong)
+    # ----------------------------------------------------------
+    - name: Deploy MCP Ingress
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ kubeconfig_path }}"
+        definition:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: k8s-mcp-ingress
+            namespace: "{{ mcp_namespace }}"
+            annotations:
+              konghq.com/strip-path: "true"
+          spec:
+            ingressClassName: kong
+            rules:
+              - host: mcp.devops-lab.dev
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: k8s-mcp-service
+                          port:
+                            number: 8080

@@ -1,0 +1,49 @@
+trigger: none
+name: "Setup-K3s-Environment"
+
+# 1. Define the Runtime Parameter
+parameters:
+  - name: TARGET_HOSTS
+    displayName: 'Ansible Target Hosts (e.g., worker-new-1,k3s_masters)'
+    type: string
+    default: 'k3s_masters:k3s_workers'
+
+# 2. Load the Variable Group (containing the secret)
+variables:
+  - group: LabSecret   # contient vault_ansible_ssh_pass / vault_controller_ssh_pass
+  - name: PLAYBOOK_PATH
+    value: "infrastructure/ansible/playbooks/deploy-k3s-cluster.yml"
+  - name: INVENTORY_PATH
+    value: "infrastructure/ansible/inventories/hosts.yml"
+  - name: ANSIBLE_CONFIG
+    value: "infrastructure/ansible/ansible.cfg"
+  - name: KUBECONFIG_LOCAL_PATH
+    value: "/home/devops/.kube/config"
+
+pool:
+  name: LabAgents
+
+steps:
+  - checkout: self
+    clean: true
+
+  # 3. Execute the Playbook (Single-line command for reliability)
+  - script: |
+      echo "=== Deploying K3s Environment for specified hosts: ${{ parameters.TARGET_HOSTS }} ==="
+
+      ansible-playbook \
+        $(System.DefaultWorkingDirectory)/$(PLAYBOOK_PATH) \
+        -i $(System.DefaultWorkingDirectory)/$(INVENTORY_PATH) \
+        --limit '${{ parameters.TARGET_HOSTS }}' \
+        -e "vault_ansible_ssh_pass=$(vault_ansible_ssh_pass)" \
+        -e "master_ip=$(K3S_MASTER_IP)" \
+        -e "k3s_token=$(K3S_TOKEN)" \
+        -e "disable_traefik=$(DISABLE_TRAEFIK)" \
+        -e "ansible_python_interpreter=/usr/bin/python3"
+
+    displayName: "Run Ansible playbook with --limit"
+
+  - script: |
+      echo "=== Validate cluster status ==="
+      kubectl get nodes -o wide || true
+    displayName: "Show cluster nodes"

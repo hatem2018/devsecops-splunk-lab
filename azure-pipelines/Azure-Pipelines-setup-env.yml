@@ -1,0 +1,34 @@
+trigger: none
+pr: none
+
+pool:
+  name: LabAgents  # your controller agent pool
+
+variables:
+- group: LabSecret
+- name: ANSIBLE_CONFIG
+  value: "infrastructure/ansible/ansible.cfg"
+
+steps:
+  - checkout: self
+    clean: true
+
+
+
+# 📌 3. Exécuter le playbook
+  - script: |
+      echo "=== Setup env on K3s VMs and controller==="
+
+      ansible-playbook \
+        $(System.DefaultWorkingDirectory)/infrastructure/ansible/playbooks/00-setup-env.yml \
+        -i $(System.DefaultWorkingDirectory)/infrastructure/ansible/inventories/hosts.yml \
+        -e "vault_ansible_ssh_pass=$(vault_ansible_ssh_pass)" \
+        -e "vault_controller_ssh_pass=$(vault_controller_ssh_pass)" \
+        -e "ansible_python_interpreter=/usr/bin/python3"
+    displayName: "Run Ansible playbook"
+
+
+  - script: |
+      echo "=== Verify setup result ==="
+      kubectl get nodes
+      kubectl get pods -A

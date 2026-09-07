@@ -1,0 +1,33 @@
+trigger: none
+pr: none
+
+pool:
+  name: LabAgents  # your controller agent pool
+
+
+variables:
+- group: LabSecret
+- name: PLAYBOOK_PATH
+  value: "infrastructure/ansible/playbooks/55-deploy-monitoring-console.yml"
+- name: INVENTORY_PATH
+  value: "infrastructure/ansible/inventories/hosts.yml"
+- name: ANSIBLE_CONFIG
+  value: "infrastructure/ansible/ansible.cfg"
+
+
+steps:
+  - checkout: self
+
+  - script: |
+      echo "=== Deploy Splunk Monitoring Console on K3s ==="
+      cd $(System.DefaultWorkingDirectory)
+      ansible-playbook ${PLAYBOOK_PATH} \
+      -i $(System.DefaultWorkingDirectory)/infrastructure/ansible/inventories/hosts.yml \
+      -e "vault_controller_ssh_pass=$(vault_controller_ssh_pass)"
+    displayName: "Run Splunk Monitoring Console playbook"
+
+  - script: |
+      echo "=== Verify Splunk Monitoring Console status ==="
+      kubectl get monitoringconsole -n splunk -o wide
+      kubectl get pods -n splunk
+    displayName: "Check deployment result"

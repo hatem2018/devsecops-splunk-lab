@@ -1,0 +1,17 @@
+---
+- name: Deploy Splunk IndexerCluster
+  hosts: controller
+  gather_facts: false
+
+  vars:
+    _ns: "{{ splunk_namespace | default('splunk') }}"
+    k8s_kubeconfig: "{{ kubeconfig_local_path | default('/home/devops/.kube/config') }}"
+
+  tasks:
+
+
+    - name: Apply IndexerCluster CR
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        template: "../roles/splunk_crd/templates/indexer-cluster.yml.j2"

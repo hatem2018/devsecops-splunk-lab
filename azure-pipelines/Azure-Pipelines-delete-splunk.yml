@@ -1,0 +1,42 @@
+trigger: none
+name: "Delete-Splunk-$(Date:yyyyMMdd)$(Rev:.r)"
+
+pool:
+  name: LabAgents
+
+variables:
+- group: LabSecret
+- name: PLAYBOOK_PATH
+  value: "infrastructure/ansible/playbooks/90-delete-splunk.yml"
+- name: INVENTORY_PATH
+  value: "infrastructure/ansible/inventories/hosts.yml"
+- name: ANSIBLE_CONFIG
+  value: "infrastructure/ansible/ansible.cfg"
+
+steps:
+
+# 1. Vérification des fichiers
+- script: |
+    echo "=== Vérification des fichiers ==="
+    echo "Working directory:"
+    pwd
+    echo ""
+
+    echo "Inventory file:"
+    ls -l $(System.DefaultWorkingDirectory)/$(INVENTORY_PATH)
+
+    echo ""
+    echo "Playbooks list:"
+    ls -l $(System.DefaultWorkingDirectory)/infrastructure/ansible/playbooks
+  displayName: "Verify playbook & inventory"
+
+# 2. Exécution du playbook Ansible
+- script: |
+    echo "=== Running delete-splunk.yml ==="
+    cd $(System.DefaultWorkingDirectory)
+
+    ANSIBLE_HOST_KEY_CHECKING=False \
+    ansible-playbook $(PLAYBOOK_PATH) \
+      -i $(INVENTORY_PATH) \
+      -e "vault_controller_ssh_pass=$(vault_controller_ssh_pass)"
+  displayName: "Delete Splunk Standalone + LM"

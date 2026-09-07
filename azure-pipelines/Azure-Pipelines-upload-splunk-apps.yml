@@ -1,0 +1,39 @@
+trigger: none
+
+pool:
+  name: LabAgents
+variables:
+- group: LabSecret
+
+steps:
+  - checkout: self
+    clean: true
+
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: 'SPLUNK-AZURE-SERVICE-CONNECTION'
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "=== Uploading Splunk apps to Azure Blob ==="
+
+        APPS_DIR="$(System.DefaultWorkingDirectory)/splunk-apps"
+
+        for app in $APPS_DIR/*; do
+            if [ -d "$app" ]; then
+                appname=$(basename $app)
+                echo "Packaging: $appname"
+
+                tar -czf ${appname}.tgz -C $APPS_DIR ${appname}
+
+                echo "Uploading: ${appname}.tgz"
+                az storage blob upload \
+                    --account-name $(AZURE_STORAGE_NAME) \
+                    --account-key $(AZURE_STORAGE_KEY) \
+                    --container-name splunk-apps \
+                    --file ${appname}.tgz \
+                    --name "${appname}/${appname}.tgz" \
+                    --overwrite true
+            fi
+        done
+    displayName: 'Upload Splunk Apps to Azure Blob Storage'

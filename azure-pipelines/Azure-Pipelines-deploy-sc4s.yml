@@ -1,0 +1,31 @@
+trigger: none
+pr: none
+
+pool:
+  name: LabAgents  # your controller agent pool
+
+variables:
+- group: LabSecret
+- name: PLAYBOOK_PATH
+  value: "infrastructure/ansible/playbooks/50-deploy-sc4s.yml"
+- name: INVENTORY_PATH
+  value: "infrastructure/ansible/inventories/hosts.yml"
+- name: ANSIBLE_CONFIG
+  value: "infrastructure/ansible/ansible.cfg"
+
+steps:
+- checkout: self
+
+- script: |
+    echo "=== Force Ansible collections versions ==="
+    rm -rf ~/.ansible/collections
+    ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
+  displayName: "Reset & install Ansible collections"
+
+- script: |
+    echo "=== Deploy Splunk Connect for Syslog on K3s ==="
+    cd $(System.DefaultWorkingDirectory)
+    ansible-playbook $(PLAYBOOK_PATH) \
+      -i $(INVENTORY_PATH) \
+      -e "vault_controller_ssh_pass=$(vault_controller_ssh_pass)"
+  displayName: "Deploy SC4S"

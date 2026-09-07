@@ -1,0 +1,59 @@
+---
+- name: Déployer stack monitoring (Prometheus + Grafana) sur k3s
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    kubeconfig_path: "/home/devops/.kube/config"   # adapte si besoin
+    monitoring_namespace: "monitoring"
+    release_name: "kube-prometheus-stack"
+    chart_version: "65.3.1"  # à ajuster si tu veux une version précise
+    values_file: "../roles/grafana-prometheus/kube-prometheus-stack-values.yaml"
+
+  tasks:
+
+
+    - name: Créer le namespace monitoring (si absent)
+      ansible.builtin.command: >
+        kubectl create namespace {{ monitoring_namespace }}
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: ns_result
+      failed_when: ns_result.rc not in [0, 1]
+      changed_when: ns_result.rc == 0
+
+    - name: Ajouter le dépôt Helm prometheus-community
+      ansible.builtin.command: >
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+      register: helm_repo_add
+      failed_when: helm_repo_add.rc not in [0, 1]
+      changed_when: helm_repo_add.rc == 0
+
+    - name: Mettre à jour les dépôts Helm
+      ansible.builtin.command: helm repo update
+      register: helm_repo_update
+      changed_when: "'...Successfully' in helm_repo_update.stdout or 'Update Complete' in helm_repo_update.stdout"
+
+    - name: Déployer / mettre à jour kube-prometheus-stack
+      ansible.builtin.command: >
+        helm upgrade --install {{ release_name }}
+        prometheus-community/kube-prometheus-stack
+        --namespace {{ monitoring_namespace }}
+        --create-namespace
+        --values {{ values_file }}
+        --version {{ chart_version }}
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: helm_install
+      changed_when: "'Release \"' in helm_install.stderr or 'Release \"' in helm_install.stdout"
+
+    - name: Attendre que tous les pods de la stack soient prêts
+      ansible.builtin.command: >
+        kubectl wait --for=condition=ready pod
+        -l app.kubernetes.io/instance={{ release_name }}
+        -n {{ monitoring_namespace }} --timeout=600s
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: wait_result
+      changed_when: false

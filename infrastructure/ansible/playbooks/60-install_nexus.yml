@@ -1,0 +1,94 @@
+---
+- name: Install Nexus Repository OSS via Docker
+  hosts: nexus
+  become: yes
+  vars:
+    nexus_container_name: nexus
+    nexus_image: "sonatype/nexus3:latest"
+    nexus_port_ui: 8081
+    nexus_port_docker: 8082
+    docker_data_dir: /var/lib/docker
+    nexus_volume: nexus-data
+
+  tasks:
+    - name: Update apt packages
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+
+    # -----------------------------------------
+    # INSTALL DOCKER
+    # -----------------------------------------
+
+    - name: Install Docker using official script
+      shell: |
+        curl -fsSL https://get.docker.com | bash
+      args:
+        creates: /usr/bin/docker
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+    - name: Enable and start Docker service
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
+
+    # -----------------------------------------
+    # CREATE NEXUS DATA VOLUME
+    # -----------------------------------------
+
+    - name: Create docker volume for Nexus
+      shell: "docker volume create {{ nexus_volume }}"
+      args:
+        creates: "/var/lib/docker/volumes/{{ nexus_volume }}"
+
+    # -----------------------------------------
+    # RUN NEXUS VIA DOCKER
+    # -----------------------------------------
+
+    - name: Deploy Nexus Repository OSS container
+      docker_container:
+        name: "{{ nexus_container_name }}"
+        image: "{{ nexus_image }}"
+        restart_policy: always
+        published_ports:
+          - "{{ nexus_port_ui }}:8081"
+          - "{{ nexus_port_docker }}:8082"
+        volumes:
+          - "{{ nexus_volume }}:/nexus-data"
+        env:
+          INSTALL4J_ADD_VM_PARAMS: "-Xms1200m -Xmx1200m"
+        state: started
+
+    # -----------------------------------------
+    # WAIT FOR NEXUS TO INITIALIZE
+    # -----------------------------------------
+
+    - name: Wait 60 seconds for Nexus to initialize
+      pause:
+        seconds: 60
+
+    # -----------------------------------------
+    # GET ADMIN PASSWORD
+    # -----------------------------------------
+
+    - name: Retrieve Nexus admin password
+      shell: "docker exec {{ nexus_container_name }} cat /nexus-data/admin.password"
+      register: nexus_admin_password
+      ignore_errors: yes
+
+    - name: Display admin credentials
+      debug:
+        msg: "Nexus Admin Password: {{ nexus_admin_password.stdout }}"

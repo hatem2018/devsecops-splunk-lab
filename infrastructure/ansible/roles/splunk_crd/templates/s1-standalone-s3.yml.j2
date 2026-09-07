@@ -1,0 +1,56 @@
+apiVersion: enterprise.splunk.com/v4
+kind: Standalone
+metadata:
+  name: s1
+  namespace: splunk
+  finalizers:
+    - enterprise.splunk.com/delete-pvc
+
+spec:
+  replicas: 1
+  image: docker.io/splunk/splunk:10.4.2
+  # License & other fields here…
+  licenseManagerRef:
+    name: lm
+
+
+  # -------------------------
+  # Splunk Storage
+  # -------------------------
+  etcVolumeStorageConfig:
+    storageClassName: local-path
+    storageCapacity: 30Gi
+
+  appRepo:
+    appsRepoPollIntervalSeconds: 600
+
+    defaults:
+      scope: local
+      volumeName: s3-app-volume
+
+    appSources:
+      - name: search-app
+        location: search-app/
+
+
+    volumes:
+      - name: s3-app-volume
+        storageType: s3
+        provider: aws
+        endpoint: https://s3.ca-central-1.amazonaws.com
+        region: ca-central-1
+        path: splunk-s3-bucket-dev/
+        secretRef: s3-secret
+
+
+  # -------------------------
+  # Startup / Probes
+  # -------------------------
+  readinessInitialDelaySeconds: 300
+  readinessTimeoutSeconds: 60
+  livenessInitialDelaySeconds: 600
+  livenessTimeoutSeconds: 60
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 20
+    timeoutSeconds: 10

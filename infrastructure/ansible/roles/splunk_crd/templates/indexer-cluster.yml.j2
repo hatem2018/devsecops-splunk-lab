@@ -1,0 +1,69 @@
+apiVersion: enterprise.splunk.com/v4
+kind: IndexerCluster
+metadata:
+  name: splunk-idxc
+  namespace: splunk
+spec:
+  splunkGeneralTerms:
+    acceptance: true
+
+  replicas: 3
+
+  # LINK TO CLUSTER MANAGER (Critical)
+  clusterManagerRef:
+    name: cm
+
+  # LINK TO LICENSE MANAGER
+  licenseManagerRef:
+    name: lm
+
+  # --- HEAVY DUTY PROBE CONFIGURATION ---
+  # Indexers are heavy. We use Exec probes for Liveness to avoid false restarts.
+
+  # 1. Startup: Give it 20 minutes. Replaying journals takes time.
+  startupProbe:
+    failureThreshold: 120   # 120 * 10s = 20 minutes
+    periodSeconds: 10
+    timeoutSeconds: 5
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - /opt/splunk/bin/splunk status
+
+  # 2. Liveness: "Is the PID running?"
+  # Avoid HTTP checks here. If the API is slow, we don't want a restart.
+  livenessProbe:
+    failureThreshold: 6
+    periodSeconds: 30
+    timeoutSeconds: 15
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - /opt/splunk/bin/splunk status
+
+  # 3. Readiness: "Can I take search traffic?"
+  # Standard HTTP check. If this fails, K8s stops sending searches, which is good.
+  readinessProbe:
+    failureThreshold: 3
+    periodSeconds: 10
+    timeoutSeconds: 5
+    httpGet:
+      path: /services/server/health/readiness
+      port: 8089
+      scheme: HTTPS
+
+  resources:
+    limits:
+      cpu: 8
+      memory: 16Gi
+    requests:
+      cpu: 4
+      memory: 8Gi
+
+  # Persistent Storage for hot buckets/logs
+  volumes:
+    - name: splunk-pvc-idxc
+      storageClassName: local-path  # Ensure this matches your provider
+      storage: 100Gi

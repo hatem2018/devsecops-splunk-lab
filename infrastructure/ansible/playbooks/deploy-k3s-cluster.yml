@@ -1,0 +1,54 @@
+---
+- name: Deploy full K3s cluster (master + workers) using Azure pipeline variables
+  hosts: k3s_masters:k3s_workers
+  become: true
+  gather_facts: true
+
+  vars:
+    master_ip: "{{ master_ip }}"        # Passed from Azure pipeline
+    k3s_token: "{{ k3s_token }}"        # Passed from Azure pipeline (SECRET)
+    traefik_disable: "{{ disable_traefik | default(false) }}"
+
+  pre_tasks:
+    - name: Detect if this host is master
+      set_fact:
+        is_master: "{{ 'k3s-master' in inventory_hostname }}"
+
+  tasks:
+
+    ###########################################################################
+    # MASTER NODE INSTALLATION (if master included in --limit)
+    ###########################################################################
+    - name: Install K3s master
+      shell: |
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server {% if traefik_disable %}--disable traefik{% endif %} --cluster-init" sh -
+      args:
+        creates: /usr/local/bin/k3s
+      when: is_master
+
+    - name: Ensure K3s master service is running
+      systemd:
+        name: k3s
+        state: started
+        enabled: true
+      when: is_master
+
+    ###########################################################################
+    # WORKER NODE INSTALLATION (Uses Azure DevOps secret token)
+    ###########################################################################
+    - name: Install K3s worker
+      shell: |
+        curl -sfL https://get.k3s.io | \
+        K3S_URL="https://{{ master_ip }}:6443" \
+        K3S_TOKEN="{{ k3s_token }}" \
+        sh -
+      args:
+        creates: /usr/local/bin/k3s-agent
+      when: not is_master
+
+    - name: Ensure K3s agent service is running
+      systemd:
+        name: k3s-agent
+        state: started
+        enabled: true
+      when: not is_master

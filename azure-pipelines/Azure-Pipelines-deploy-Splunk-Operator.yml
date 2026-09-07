@@ -1,0 +1,21 @@
+trigger: none
+pr: none
+
+pool:
+  name: LabAgents
+
+steps:
+  - checkout: self
+
+
+# 📌 3. Exécuter le playbook
+  - script: |
+      echo "=== Run Splunk Operator upgrade ==="
+
+      ansible-playbook \
+        $(System.DefaultWorkingDirectory)/infrastructure/ansible/playbooks/30-deploy-splunk-operator.yml \
+        -i $(System.DefaultWorkingDirectory)/infrastructure/ansible/inventories/hosts.yml \
+
+        -e "vault_controller_ssh_pass=$(vault_controller_ssh_pass)" \
+        -e "ansible_python_interpreter=/usr/bin/python3"
+    displayName: "Upgrade Splunk Operator via Ansible"
