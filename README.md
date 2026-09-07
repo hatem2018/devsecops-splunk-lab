@@ -8,6 +8,10 @@ The project is designed as a hands-on environment for infrastructure automation,
 
 ## Architecture
 
+Detailed architecture documentation and diagrams are available here:
+
+➡️ [View Architecture](docs/architecture.md)
+
 ```text
                          GitHub
                            |
